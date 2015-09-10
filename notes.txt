@@ -1,0 +1,84 @@
+50k examples, learning rate 1e-4: 27% correct. 
+total number of weights: 813056
+original: 7840, which bottomed out after 100k examples.
+100k examples, learning rate 1e-4, 27.88% correct.  
+100k examples, lr 1e-5, 9.74% correct. (chance!)
+5e5 examples, 1e-4, 30% correct, hidden[k]rule. 
+100k examples, learning rate 1e-4, hidden[k]*w[j][k] rule, 25% correct. 
+500k: chance level correct, same hidden learning rule.
+5e5, 5e-5: 28% correct. (1e-4 is better). 
+2e6, 1e-4: 37.669% correct.  
+2e6, 2e-4: 37.15% correct. 
+5e6, 1e-4: 36% correct. 
+
+I might be doing something wrong here... e.g. a bug!
+Indeed, the 3-xor problem cannot be solved, even though I can easily think of a solution w/ the two-layer network.
+http://mattmazur.com/2015/03/17/a-step-by-step-backpropagation-example/
+
+time ./two 1e4 1e-1 
+double:
+real    0m32.594s
+float:
+real    0m33.216s
+
+No difference -- might as well use doubles. (same accuracy)
+
+No transformation:
+./two 5e7 1e-2
+correct: 98.220000 error: 1.780000
+./two 6e7 5e-3
+correct: 98.070000 error: 1.930000
+
+with elastic deformations, stdev 3.0: 
+./two 1e7 2e-2 (or 3e-2, same result)
+correct: 98.400000 error: 1.600000
+
+with elastic deformations, stdev 4.0: 
+./two 1e7 3e-2
+correct: 98.160000 error: 1.840000
+
+out of curiosity, might want to see those 160 errors, 
+to understand what sort of errors the network is making.
+
+-03, time ./two 2e4 3e-2 1:01.1
+-O5, time ./two 2e4 3e-2 1:00.6
+-O3 is fine! 
+
+elastic deformations, stdev 2.0, 
+./two 1e7 3e-2 
+correct: 98.580000 error: 1.420000
+./two 5e7 3e-2
+correct 98.510000 error: 1.490000
+elastic deformations, stdev 2.5: 
+./two 2e7 3e-2
+correct: 98.520000 error: 1.480000
+(same with 1.5e7 and 3.2e-2)
+
+
+xy shifts, uniform +-2.0: (terminal)
+
+gcc -O3 2layer.cpp -o two -lm -lstdc++ -std=c++11 -Wall
+
+Adding weight decay: 
+./two 1e7 3e-2 1e-5 0
+correct: 98.480000 error: 1.520000
+not better!
+./two 1e7 3e-2 2e-5 1
+correct: 97.970000 error: 2.030000
+worse!
+
+Likewise, subtracting 0.3 from the images degrades performance to 2.5% error. 
+
+Next will try a purely linear network.
+
+gnuplot> plot for [n=2:20] 'output_w_decay.txt' u 1:(column(n))  with lines notitle
+gnuplot> set yrange [-0.5 : 0.5]
+gnuplot> replot
+gnuplot> set yrange [-0.2 : 0.2]
+gnuplot> replot
+gnuplot> replot
+gnuplot> replot
+gnuplot> plot for [n=2:20] 'hidden_w_decay.txt' u 1:(column(n))  with lines notitle
+gnuplot> set yrange [-0.02 : 0.02]
+gnuplot> replot
+gnuplot> quit
