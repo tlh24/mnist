@@ -24,13 +24,13 @@ double* load_images(const char* filename){
 		return 0; 
 	}
 	unsigned int dims[4]; 
-	fread(dims, 4, 4, images); 
+	size_t ign = fread(dims, 4, 4, images); 
 	for(int i=0; i<4; i++)
 		dims[i] = htonl(dims[i]); 
 	printf("%x images:%d rows:%d columns:%d\n", dims[0], dims[1], dims[2], dims[3]); 
 	size_t siz = dims[1] * dims[2] * dims[3]; 
 	unsigned char* imc = (unsigned char*)malloc(siz); 
-	fread(imc, 1, siz, images); 
+	ign = fread(imc, 1, siz, images); 
 	//best to convert these to double once.  
 	double* im = (double*)malloc(siz*sizeof(double)); 
 	for(size_t i=0; i<siz; i++){
@@ -48,14 +48,14 @@ unsigned char* load_labels(const char* filename, int& num){
 		return 0; 
 	}
 	unsigned int dims[2]; 
-	fread(dims, 4, 2, labels); 
+	size_t ign = fread(dims, 4, 2, labels); 
 	for(int i=0; i<2; i++)
 		dims[i] = htonl(dims[i]); 
 	printf("%x labels:%d \n", dims[0], dims[1]); 
 	size_t siz = dims[1] ; 
 	num = dims[1]; 
 	unsigned char* lab = (unsigned char*)malloc(siz); 
-	fread(lab, 1, siz, labels); 
+	ign = fread(lab, 1, siz, labels); 
 	fclose(labels); 
 	return lab;
 }
