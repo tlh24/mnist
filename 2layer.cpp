@@ -10,6 +10,7 @@ double* g_im;
 unsigned char* g_lab; 
 int	g_n; 
 bool g_trace = false; 
+#define NHID 2048
 
 double randf(){
 	//uniform random numbers
