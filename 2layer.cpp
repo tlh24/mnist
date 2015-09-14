@@ -10,7 +10,7 @@ double* g_im;
 unsigned char* g_lab; 
 int	g_n; 
 bool g_trace = false; 
-#define NHID 2048
+#define NHID 1024
 
 double randf(){
 	//uniform random numbers
@@ -25,13 +25,13 @@ double* load_images(const char* filename){
 		return 0; 
 	}
 	unsigned int dims[4]; 
-	size_t ign = fread(dims, 4, 4, images); 
+	fread(dims, 4, 4, images); 
 	for(int i=0; i<4; i++)
 		dims[i] = htonl(dims[i]); 
 	printf("%x images:%d rows:%d columns:%d\n", dims[0], dims[1], dims[2], dims[3]); 
 	size_t siz = dims[1] * dims[2] * dims[3]; 
 	unsigned char* imc = (unsigned char*)malloc(siz); 
-	ign = fread(imc, 1, siz, images); 
+	fread(imc, 1, siz, images); 
 	//best to convert these to double once.  
 	double* im = (double*)malloc(siz*sizeof(double)); 
 	for(size_t i=0; i<siz; i++){
@@ -49,14 +49,14 @@ unsigned char* load_labels(const char* filename, int& num){
 		return 0; 
 	}
 	unsigned int dims[2]; 
-	size_t ign = fread(dims, 4, 2, labels); 
+	fread(dims, 4, 2, labels); 
 	for(int i=0; i<2; i++)
 		dims[i] = htonl(dims[i]); 
 	printf("%x labels:%d \n", dims[0], dims[1]); 
 	size_t siz = dims[1] ; 
 	num = dims[1]; 
 	unsigned char* lab = (unsigned char*)malloc(siz); 
-	ign = fread(lab, 1, siz, labels); 
+	fread(lab, 1, siz, labels); 
 	fclose(labels); 
 	return lab;
 }
@@ -116,7 +116,7 @@ void write_pgm(char* fname, double* data){
 }
 
 void test_resample(){
-	std::default_random_engine generator;
+	std::mt19937 generator;
 	std::normal_distribution<double> distribution(0.0,3.0);
 	
 	for(int u=0; u<25; u++){
@@ -149,30 +149,33 @@ void train(int ntrain, double eta, double decay)
 	int hidw_indx[100]; 
 	int outw_indx[100]; 
 	for(int i=0; i<100; i++){
-		hidw_indx[i] = rand() % (1024 * 28 * 28); 
-		outw_indx[i] = rand() % (1024 * 10); 
+		hidw_indx[i] = rand() % (NHID * 28 * 28); 
+		outw_indx[i] = rand() % (NHID * 10); 
 	}
 	
 	std::random_device rd;   // non-deterministic generator
    std::mt19937 gen(rd());  // to seed mersenne twister.
-	std::default_random_engine generator;
 	std::normal_distribution<double> distribution(0.0,2.0);
+ 	std::uniform_int_distribution<int> uniform28(0,0x0fffffff);
 
 	//second try: one hidden layer.  
-	double hw[1024][28*28+1]; 
+	double hw[NHID][28*28+1]; 
 	//this assumes the images are maybe 50% white, one-hot output, start weights so all are on a little bit?
-	for(int j=0; j<1024; j++){
+	for(int j=0; j<NHID; j++){
 		for(int i=0; i< 28*28+1; i++){
 			hw[j][i] = (randf() - 0.2f) * 0.01;
 		}
 	}
 	//and the output layer. 
-	double w[10][1024+1]; 
+	double w[10][NHID+1]; 
 	for(int j=0; j<10; j++){
-		for(int i=0; i< 1024+1; i++){
+		for(int i=0; i< NHID+1; i++){
 			w[j][i] = (randf() - 0.2f) * 0.01;
 		}
 	}
+	//input dropout, one per hidden unit, one bit per image row.
+	unsigned int ido[1024][28]; 
+	
 	int lastfalse = 0; 
 	for(int i=0; i<ntrain; i++){
 		// select an image, SGD. 
@@ -183,19 +186,23 @@ void train(int ntrain, double eta, double decay)
 		double corners[8] = {0,0, 27,0, 0,27, 27,27}; 
 		if(randf() > 0.2){
 			for(int i=0; i<8; i++){
-				corners[i] += distribution(generator); 
+				corners[i] += distribution(gen); 
 			}
 			resample(u, corners, resamp); 
 			in = resamp; 
 		} else {
 			in = (double*)&(g_im[u*28*28]); 
 		}
-		double hidden[1024]; //hidden layer activations. 
-		for(int j=0; j<1024; j++){
+		double hidden[NHID]; //hidden layer activations. 
+		for(int j=0; j<NHID; j++){
+			for(int k=0; k<28; k++){
+				ido[j][k] = uniform28(gen); 
+			}
 			hidden[j] = 0; 
 			if(randf() > 0.5){ //dropout.
 				for(int k=1; k<28*28; k++){
-					hidden[j] += in[k] * hw[j][k]; 
+					double indo = ((ido[j][k/28]) >> (k%28)) & 1; 
+					hidden[j] += in[k] * hw[j][k] * indo; 
 				}
 				hidden[j] += 1.0 * hw[j][28*28]; //bias term. 
 				hidden[j] = hidden[j] > 0.0 ? hidden[j] : 0.0; //ReLU. 
@@ -210,28 +217,29 @@ void train(int ntrain, double eta, double decay)
 			target[j] = j == ll ? 1.f : 0.f; 
 			// inner product to get network output. 
 			out[j] = 0.f; 
-			for(int k=0; k< 1024; k++){
+			for(int k=0; k< NHID; k++){
 				out[j] += hidden[k] * w[j][k]; 
 			}
-			out[j] += w[j][1024]; // bias
+			out[j] += w[j][NHID]; // bias
 			out[j] = clamp(out[j], 0, 3.0); //again, relu. 
 			
 			err[j] = target[j] - out[j]; 
 			// backprop to update weights.
-			for(int k=0; k<1024+1; k++){
+			for(int k=0; k<NHID+1; k++){
 				//decay the learning rate to zero.
 				//double eta_ = eta * (double)(ntrain-i) / (double)ntrain; 
 				double del = eta * err[j] * 
-						(k < 1024 ? hidden[k] : 1.0);
+						(k < NHID ? hidden[k] : 1.0);
 				del = clamp(del, -0.1, 0.1); 
-				if(k < 1024 && hidden[k] > 0.0){
+				if(k < NHID && hidden[k] > 0.0){
 					for(int m=0; m<28*28 + 1; m++){
+						double indo = ((ido[j][m/28]) >> (m%28)) & 1; 
 						hw[k][m] += del * w[j][k] * 
-								(m < 28*28 ? in[m] : 1); 
+								(m < 28*28 ? in[m]*indo : 1); 
 					}
 				}
 				double d = w[j][k] + del; 
-				if(k < 1024)
+				if(k < NHID)
 					w[j][k] = clamp(d, -1.0, 1.0); 
 				//and weight decay. 
 				double decay_ = decay * (double)(ntrain-i) / (double)ntrain; 
@@ -250,12 +258,12 @@ void train(int ntrain, double eta, double decay)
 		if(max != ll){
 			lastfalse = i; 
 		}
-		if(i%1001 == 0){
+		if(i%1009 == 0){
 			printf("%dk, last err %f, correct run %d ", 
 					 i/1000, terr, i - lastfalse); 
 			double m = 0.0; 
 			double ma = 0.0; 
-			for(int j=0; j<1024; j++){
+			for(int j=0; j<NHID; j++){
 				for(int k=0; k<28*28; k++){
 					m += hw[j][k]; 
 					ma += fabs(hw[j][k]); 
@@ -263,20 +271,20 @@ void train(int ntrain, double eta, double decay)
 						hw[j][k] = 0; 
 				}
 			}
-			m /= (1024.0 * 28.0 * 28.0); 
-			ma /= (1024.0 * 28.0 * 28.0); 
+			m /= (NHID * 28.0 * 28.0); 
+			ma /= (NHID * 28.0 * 28.0); 
 			printf(" hw: %f abs %f ", m, ma); 
 			m = ma = 0.0; 
 			for(int j=0; j<10; j++){
-				for(int k=0; k<1024; k++){
+				for(int k=0; k<NHID; k++){
 					m += w[j][k]; 
 					ma += fabs(w[j][k]); 
 					if(fabs(w[j][k]) > 1.0)
 						w[j][k] = 0; 
 				}
 			}
-			m /= (1024.0 * 10.0); 
-			ma /= (1024.0 * 10.0); 
+			m /= (NHID * 10.0); 
+			ma /= (NHID * 10.0); 
 			printf(" ow: %f abs %f ", m, ma); 
 			for(int j=0; j<10; j++){
 				if(err[j] < 0.0)
@@ -286,7 +294,7 @@ void train(int ntrain, double eta, double decay)
 			}
 			printf("\n"); 
 		}
-		if(i%200 == 0 && g_trace){
+		if(i%257 == 0 && g_trace){
 			fprintf(hidw_fil, "%d\t", i); 
 			for(int j=0; j<100; j++){
 				fprintf(hidw_fil, "%e\t", hw[0][hidw_indx[j]]); 
@@ -311,11 +319,11 @@ void train(int ntrain, double eta, double decay)
 	unsigned char* t_lab = load_labels("t10k-labels-idx1-ubyte", ntest); 
 	int correct = 0; 
 	for(int i=0; i<ntest; i++){
-		double hidden[1024]; 
-		for(int j=0; j<1024; j++){
+		double hidden[NHID]; 
+		for(int j=0; j<NHID; j++){
 			hidden[j] = 0; 
 			for(int k=0; k<28*28; k++){
-				hidden[j] += hw[j][k] * t_img[i*28*28 + k]; 
+				hidden[j] += 0.5 * hw[j][k] * t_img[i*28*28 + k]; 
 			}
 			hidden[j] += hw[j][28*28]; 
 			hidden[j] = hidden[j] > 0.0 ? hidden[j] : 0.0; 
@@ -324,11 +332,11 @@ void train(int ntrain, double eta, double decay)
 		double output[10]; 
 		for(int j=0; j<10; j++){
 			output[j] = 0.f; 
-			for(int k=0; k < 1024; k++){
+			for(int k=0; k < NHID; k++){
 				//no dropout, half the weights. 
-				output[j] += w[j][k] * 0.5 * hidden[k]; 
+				output[j] += 0.5 * w[j][k] * hidden[k]; 
 			}
-			output[j] += w[j][1024]; 
+			output[j] += w[j][NHID]; 
 		}
 		int max = 0; double mf = -1e9; 
 		for(int j=0; j<10; j++){
@@ -349,7 +357,7 @@ void train(int ntrain, double eta, double decay)
 
 int main(int argn, char* argc[]){
 	//change the stack size (easier to index off the stack)
-	const rlim_t kStackSize = 16 * 1024 * 1024;   
+	const rlim_t kStackSize = 16 * NHID * NHID;   
 		// min stack size = 16 MB
 	struct rlimit rl;
 	int result;
