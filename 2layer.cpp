@@ -12,12 +12,6 @@ int	g_n;
 bool g_trace = false; 
 #define NHID 1024
 
-double randf(){
-	//uniform pseudo-random numbers
-	double r = (double)rand(); 
-	return (double)(r / RAND_MAX);
-}
-
 double* load_images(const char* filename){
 	FILE* images = fopen(filename, "r"); 
 	if(!images){
@@ -149,7 +143,7 @@ public:
 	}
 	void update(double grad){
 		m_eg2 = m_eg2 * 0.95 + 0.05 * grad*grad; 
-		double del = -1.0 * grad * sqrt(m_ex2 + 1e-3) / sqrt(m_eg2 + 1e-3); 
+		double del = grad * sqrt(m_ex2 + 1e-3) / sqrt(m_eg2 + 1e-3); 
 		m_ex2 = 0.95 * m_ex2 + 0.05 * del*del; 
 		w += del; 
 	}
@@ -177,21 +171,21 @@ void train(int ntrain, double eta, double decay)
 	std::random_device rd;   // non-deterministic generator
    std::mt19937 gen(rd());  // to seed mersenne twister.
 	std::normal_distribution<double> distribution(0.0,2.0);
- 	std::uniform_int_distribution<int> uniform28(0,0x0fffffff);
+	std::uniform_real_distribution<double> uniform(0.0,1.0);
 
 	//second try: one hidden layer.  
 	weight hw[NHID][28*28+1]; 
 	//this assumes the images are maybe 50% white, one-hot output, start weights so all are on a little bit?
 	for(int j=0; j<NHID; j++){
 		for(int i=0; i< 28*28+1; i++){
-			hw[j][i] = (randf() - 0.2f) * 0.01;
+			hw[j][i] = (uniform(gen) - 0.2f) * 0.01;
 		}
 	}
 	//and the output layer. 
 	weight w[10][NHID+1]; 
 	for(int j=0; j<10; j++){
 		for(int i=0; i< NHID+1; i++){
-			w[j][i] = (randf() - 0.2f) * 0.01;
+			w[j][i] = (uniform(gen) - 0.2f) * 0.01;
 		}
 	}
 	
@@ -203,7 +197,7 @@ void train(int ntrain, double eta, double decay)
 		double* in; 
 		double resamp[28*28]; 
 		double corners[8] = {0,0, 27,0, 0,27, 27,27}; 
-		if(randf() > 0.2){
+		if(uniform(gen) > 0.2){
 			for(int i=0; i<8; i++){
 				corners[i] += distribution(gen); 
 			}
@@ -215,7 +209,7 @@ void train(int ntrain, double eta, double decay)
 		double hidden[NHID]; //hidden layer activations. 
 		for(int j=0; j<NHID; j++){
 			hidden[j] = 0; 
-			if(randf() > 0.5){ //dropout.
+			if(uniform(gen) > 0.5){ //dropout.
 				for(int k=1; k<28*28; k++){
 					hidden[j] += in[k] * hw[j][k].w; 
 				}
@@ -247,16 +241,16 @@ void train(int ntrain, double eta, double decay)
 				del = clamp(del, -0.1, 0.1); //stability.
 				if(k < NHID && hidden[k] > 0.0){
 					for(int m=0; m<28*28 + 1; m++){
-						hw[k][m].w += del * w[j][k].w * 
-								(m < 28*28 ? in[m]: 1); 
+						hw[k][m].update(del * w[j][k].w * (m < 28*28 ? in[m]: 1));
+						//hw[k][m].w += del * w[j][k].w * 
+						//		(m < 28*28 ? in[m]: 1); 
 					}
 				}
-				double d = w[j][k].w + del; 
-				if(k < NHID)
-					w[j][k] = clamp(d, -1.0, 1.0); 
-				//and weight decay. 
-				double decay_ = decay * (double)(ntrain-i) / (double)ntrain; 
-				w[j][k].w *= (1.0 - decay_); 
+				w[j][k].update(del); 
+				//double d = w[j][k].w + del; 
+				//if(k < NHID)
+				//	w[j][k] = clamp(d, -1.0, 1.0); 
+				//w[j][k].w *= (1.0 - decay_); 
 			}
 			terr += err[j]; 
 		}
