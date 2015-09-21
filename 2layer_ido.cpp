@@ -138,12 +138,12 @@ void test_resample(){
 class weight{
 	//implements the ADADELTA algorithm. 
 public:
-	double w; 
+	double m_w; 
 	double m_eg2; //smoothed squared gradient
 	double m_ex2; //smoothed squared weight change
 	
 	weight(){
-		w = 0.0;
+		m_w = 0.0;
 		m_eg2 = 0.0; 
 		m_ex2 = 0.0; 
 	}
@@ -153,7 +153,7 @@ public:
 		m_ex2 = 0.95 * m_ex2 + 0.05 * del*del; 
 		w += del; 
 	}
-	void operator=(double d){ w = d; }
+	operator=(double d){ m_w = d; }
 };
 
 void train(int ntrain, double eta, double decay)
@@ -188,12 +188,14 @@ void train(int ntrain, double eta, double decay)
 		}
 	}
 	//and the output layer. 
-	weight w[10][NHID+1]; 
+	double w[10][NHID+1]; 
 	for(int j=0; j<10; j++){
 		for(int i=0; i< NHID+1; i++){
 			w[j][i] = (randf() - 0.2f) * 0.01;
 		}
 	}
+	//input dropout, one per hidden unit, one bit per image row.
+	unsigned int ido[1024][28]; 
 	
 	int lastfalse = 0; 
 	for(int i=0; i<ntrain; i++){
@@ -214,12 +216,16 @@ void train(int ntrain, double eta, double decay)
 		}
 		double hidden[NHID]; //hidden layer activations. 
 		for(int j=0; j<NHID; j++){
+			for(int k=0; k<28; k++){
+				ido[j][k] = uniform28(gen); 
+			}
 			hidden[j] = 0; 
 			if(randf() > 0.5){ //dropout.
 				for(int k=1; k<28*28; k++){
-					hidden[j] += in[k] * hw[j][k].w; 
+					double indo = ((ido[j][k/28]) >> (k%28)) & 1; 
+					hidden[j] += in[k] * hw[j][k] * indo; 
 				}
-				hidden[j] += 1.0 * hw[j][28*28].w; //bias term. 
+				hidden[j] += 1.0 * hw[j][28*28]; //bias term. 
 				hidden[j] = hidden[j] > 0.0 ? hidden[j] : 0.0; //ReLU. 
 			}
 		}
@@ -233,9 +239,9 @@ void train(int ntrain, double eta, double decay)
 			// inner product to get network output. 
 			out[j] = 0.f; 
 			for(int k=0; k< NHID; k++){
-				out[j] += hidden[k] * w[j][k].w; 
+				out[j] += hidden[k] * w[j][k]; 
 			}
-			out[j] += w[j][NHID].w; // bias
+			out[j] += w[j][NHID]; // bias
 			out[j] = clamp(out[j], 0, 3.0); //again, relu. 
 			
 			err[j] = target[j] - out[j]; 
@@ -247,16 +253,17 @@ void train(int ntrain, double eta, double decay)
 				del = clamp(del, -0.1, 0.1); //stability.
 				if(k < NHID && hidden[k] > 0.0){
 					for(int m=0; m<28*28 + 1; m++){
-						hw[k][m].w += del * w[j][k].w * 
-								(m < 28*28 ? in[m]: 1); 
+						double indo = ((ido[j][m/28]) >> (m%28)) & 1; 
+						hw[k][m] += del * w[j][k] * 
+								(m < 28*28 ? in[m]*indo : 1); 
 					}
 				}
-				double d = w[j][k].w + del; 
+				double d = w[j][k] + del; 
 				if(k < NHID)
 					w[j][k] = clamp(d, -1.0, 1.0); 
 				//and weight decay. 
 				double decay_ = decay * (double)(ntrain-i) / (double)ntrain; 
-				w[j][k].w *= (1.0 - decay_); 
+				w[j][k] *= (1.0 - decay_); 
 			}
 			terr += err[j]; 
 		}
@@ -278,10 +285,10 @@ void train(int ntrain, double eta, double decay)
 			double ma = 0.0; 
 			for(int j=0; j<NHID; j++){
 				for(int k=0; k<28*28; k++){
-					m += hw[j][k].w; 
-					ma += fabs(hw[j][k].w); 
-					if(fabs(hw[j][k].w) > 1.0)
-						hw[j][k].w = 0; 
+					m += hw[j][k]; 
+					ma += fabs(hw[j][k]); 
+					if(fabs(hw[j][k]) > 1.0)
+						hw[j][k] = 0; 
 				}
 			}
 			m /= (NHID * 28.0 * 28.0); 
@@ -290,10 +297,10 @@ void train(int ntrain, double eta, double decay)
 			m = ma = 0.0; 
 			for(int j=0; j<10; j++){
 				for(int k=0; k<NHID; k++){
-					m += w[j][k].w; 
-					ma += fabs(w[j][k].w); 
-					if(fabs(w[j][k].w) > 1.0)
-						w[j][k].w = 0; 
+					m += w[j][k]; 
+					ma += fabs(w[j][k]); 
+					if(fabs(w[j][k]) > 1.0)
+						w[j][k] = 0; 
 				}
 			}
 			m /= (NHID * 10.0); 
@@ -310,12 +317,12 @@ void train(int ntrain, double eta, double decay)
 		if(i%257 == 0 && g_trace){
 			fprintf(hidw_fil, "%d\t", i); 
 			for(int j=0; j<100; j++){
-				fprintf(hidw_fil, "%e\t", hw[0][hidw_indx[j]].w); 
+				fprintf(hidw_fil, "%e\t", hw[0][hidw_indx[j]]); 
 			}
 			fprintf(hidw_fil, "\n"); 
 			fprintf(outw_fil, "%d\t", i); 
 			for(int j=0; j<100; j++){
-				fprintf(outw_fil, "%e\t", w[0][outw_indx[j]].w); 
+				fprintf(outw_fil, "%e\t", w[0][outw_indx[j]]); 
 			}
 			fprintf(outw_fil, "\n"); 
 		}
@@ -336,9 +343,9 @@ void train(int ntrain, double eta, double decay)
 		for(int j=0; j<NHID; j++){
 			hidden[j] = 0; 
 			for(int k=0; k<28*28; k++){
-				hidden[j] += hw[j][k].w * t_img[i*28*28 + k]; 
+				hidden[j] += 0.5 * hw[j][k] * t_img[i*28*28 + k]; 
 			}
-			hidden[j] += hw[j][28*28].w; 
+			hidden[j] += hw[j][28*28]; 
 			hidden[j] = hidden[j] > 0.0 ? hidden[j] : 0.0; 
 		}
 		//output layer. 
@@ -347,9 +354,9 @@ void train(int ntrain, double eta, double decay)
 			output[j] = 0.f; 
 			for(int k=0; k < NHID; k++){
 				//no dropout, half the weights. 
-				output[j] += 0.5 * w[j][k].w * hidden[k]; 
+				output[j] += 0.5 * w[j][k] * hidden[k]; 
 			}
-			output[j] += w[j][NHID].w; 
+			output[j] += w[j][NHID]; 
 		}
 		int max = 0; double mf = -1e9; 
 		for(int j=0; j<10; j++){
@@ -370,8 +377,8 @@ void train(int ntrain, double eta, double decay)
 
 int main(int argn, char* argc[]){
 	//change the stack size (easier to index off the stack)
-	const rlim_t kStackSize = 64 * NHID * NHID;   
-		// min stack size = 64 MB
+	const rlim_t kStackSize = 16 * NHID * NHID;   
+		// min stack size = 16 MB
 	struct rlimit rl;
 	int result;
 	result = getrlimit(RLIMIT_STACK, &rl);

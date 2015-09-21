@@ -10,3 +10,6 @@ two: 2layer.cpp
 deps:
 	sudo apt-get update
 	sudo apt-get install g++ make
+
+clean:
+	rm -rf two xor *.o
