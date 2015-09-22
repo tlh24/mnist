@@ -130,13 +130,26 @@ void test_resample(){
 }
 
 class weight{
+	//implements the pure SGD algorithm. 
+public:
+	double w; 
+	weight(){
+		w = 0.0;
+	}
+	void update(double grad){
+		w += grad; 
+	}
+	void operator=(double d){ w = d; }
+};
+
+class weight_AD{
 	//implements the ADADELTA algorithm. 
 public:
 	double w; 
 	double m_eg2; //smoothed squared gradient
 	double m_ex2; //smoothed squared weight change
 	
-	weight(){
+	weight_AD(){
 		w = 0.0;
 		m_eg2 = 0.0; 
 		m_ex2 = 0.0; 
@@ -172,6 +185,19 @@ void train(int ntrain, double eta, double decay)
    std::mt19937 gen(rd());  // to seed mersenne twister.
 	std::normal_distribution<double> distribution(0.0,2.0);
 	std::uniform_real_distribution<double> uniform(0.0,1.0);
+	std::uniform_int_distribution<int> randint(0x80000000,0x7fffffff); 
+	int lastrand = 0; 
+	int lastrandshift = 32; 
+	auto randsign = [&](){
+		if(lastrandshift >= 31){
+			lastrand = randint(gen); 
+			lastrandshift = 0; 
+		}
+		double s = (lastrand & 0x1) > 0 ? 1.0 : -1.0; 
+		lastrand = lastrand >> 1; 
+		lastrandshift++; 
+		return s; 
+	}; 
 
 	//second try: one hidden layer.  
 	weight hw[NHID][28*28+1]; 
@@ -241,16 +267,12 @@ void train(int ntrain, double eta, double decay)
 				del = clamp(del, -0.1, 0.1); //stability.
 				if(k < NHID && hidden[k] > 0.0){
 					for(int m=0; m<28*28 + 1; m++){
-						hw[k][m].update(del * w[j][k].w * (m < 28*28 ? in[m]: 1));
-						//hw[k][m].w += del * w[j][k].w * 
-						//		(m < 28*28 ? in[m]: 1); 
+						hw[k][m].update(del * w[j][k].w * (m < 28*28 ? in[m]: 1) * randsign());
 					}
 				}
 				w[j][k].update(del); 
-				//double d = w[j][k].w + del; 
-				//if(k < NHID)
-				//	w[j][k] = clamp(d, -1.0, 1.0); 
-				//w[j][k].w *= (1.0 - decay_); 
+				if(k < NHID)
+					w[j][k] = clamp(w[j][k].w, -1.0, 1.0); 
 			}
 			terr += err[j]; 
 		}
@@ -378,8 +400,8 @@ int main(int argn, char* argc[]){
 			}
 		}
 	}
-	int ntrain = 100000; 
-	double eta = 1e-4; 
+	int ntrain = 1e6; 
+	double eta = 3e-2; 
 	double decay = 5e-5; 
 
 	if(argn == 5){
