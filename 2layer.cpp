@@ -267,7 +267,7 @@ void train(int ntrain, double eta, double decay)
 				del = clamp(del, -0.1, 0.1); //stability.
 				if(k < NHID && hidden[k] > 0.0){
 					for(int m=0; m<28*28 + 1; m++){
-						hw[k][m].update(del * w[j][k].w * (m < 28*28 ? in[m]: 1) * randsign());
+						hw[k][m].update(del * w[j][k].w * (m < 28*28 ? in[m]: 1)); // * randsign());
 					}
 				}
 				w[j][k].update(del); 
