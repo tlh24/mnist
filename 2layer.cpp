@@ -172,8 +172,8 @@ class weight_CM{ //classical momentum.
 		v = 0.0; 
 	}
 	void update(double grad){
-		v *= 0.9;  //playing it safe.  0.95 might be better.
-		v += 0.1 * grad; 
+		v *= 0.9;  //playing it safe.  0.95 might be better..
+		v += 0.1 * grad; // higher learning rate with this might better as well. 
 		w += v; 
 	}
 	void operator=(double d){ w = d; }
