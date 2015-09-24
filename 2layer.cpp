@@ -163,6 +163,22 @@ public:
 	void operator=(double d){ w = d; }
 };
 
+class weight_CM{ //classical momentum.
+	public:
+	double w; 
+	double v; 
+	weight_CM(){
+		w = 0.0;
+		v = 0.0; 
+	}
+	void update(double grad){
+		v *= 0.9;  //playing it safe.  0.95 might be better.
+		v += 0.1 * grad; 
+		w += v; 
+	}
+	void operator=(double d){ w = d; }
+}; 
+
 void train(int ntrain, double eta, double decay)
 {
 	srand (time(NULL));
@@ -186,21 +202,21 @@ void train(int ntrain, double eta, double decay)
 	std::normal_distribution<double> distribution(0.0,2.0);
 	std::uniform_real_distribution<double> uniform(0.0,1.0);
 	std::uniform_int_distribution<int> randint(0x80000000,0x7fffffff); 
-	int lastrand = 0; 
-	int lastrandshift = 32; 
-	auto randsign = [&](){
-		if(lastrandshift >= 31){
-			lastrand = randint(gen); 
-			lastrandshift = 0; 
-		}
-		double s = (lastrand & 0x1) > 0 ? 1.0 : -1.0; 
-		lastrand = lastrand >> 1; 
-		lastrandshift++; 
-		return s; 
-	}; 
+// 	int lastrand = 0; 
+// 	int lastrandshift = 32; 
+// 	auto randsign = [&](){
+// 		if(lastrandshift >= 31){
+// 			lastrand = randint(gen); 
+// 			lastrandshift = 0; 
+// 		}
+// 		double s = (lastrand & 0x1) > 0 ? 1.0 : -1.0; 
+// 		lastrand = lastrand >> 1; 
+// 		lastrandshift++; 
+// 		return s; 
+// 	}; 
 
 	//second try: one hidden layer.  
-	weight hw[NHID][28*28+1]; 
+	weight_CM hw[NHID][28*28+1]; 
 	//this assumes the images are maybe 50% white, one-hot output, start weights so all are on a little bit?
 	for(int j=0; j<NHID; j++){
 		for(int i=0; i< 28*28+1; i++){
@@ -208,7 +224,7 @@ void train(int ntrain, double eta, double decay)
 		}
 	}
 	//and the output layer. 
-	weight w[10][NHID+1]; 
+	weight_CM w[10][NHID+1]; 
 	for(int j=0; j<10; j++){
 		for(int i=0; i< NHID+1; i++){
 			w[j][i] = (uniform(gen) - 0.2f) * 0.01;
